@@ -77,7 +77,7 @@ const hygieneAbi = [
   },
 ] as const;
 
-// 지갑 주소 예쁘게 줄이기
+// 지갑 주소 줄여서 표시
 function shortenAddress(addr?: string) {
   if (!addr) return '';
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
@@ -101,15 +101,12 @@ function getRiskLabel(
   allowance: bigint | undefined,
   decimals: number
 ): RiskInfo {
-  // 1) allowance를 아직 못 가져왔을 때
   if (allowance === undefined) {
     return { label: '알 수 없음', color: 'bg-gray-200' };
   }
 
-  // 여기부터는 allowance가 bigint라고 확정
   const value = allowance;
 
-  // 2) 0이면 완전 안전
   if (value === BigInt(0)) {
     return {
       label: '안전 (0, 권한 없음)',
@@ -117,10 +114,6 @@ function getRiskLabel(
     };
   }
 
-  // 3) 아주 단순한 기준:
-  //    - 1 토큰 미만: 낮은 위험
-  //    - 1 ~ 1,000 토큰: 주의
-  //    - 1,000 토큰 이상: 고위험 (사실상 무제한 느낌)
   const one = BigInt(10) ** BigInt(decimals);
   const thousand = one * BigInt(1000);
 
@@ -166,33 +159,61 @@ export default function Page() {
       hash: txHash,
     });
 
+  // ===== 사용자가 입력하는 토큰 / spender 주소 (기본값은 env) =====
+  const [tokenInput, setTokenInput] = React.useState<string>(
+    TOKEN_ADDRESS ?? ''
+  );
+  const [spenderInput, setSpenderInput] = React.useState<string>(
+    SPENDER_ADDRESS ?? ''
+  );
+
+  const normalizedTokenAddress =
+    tokenInput.startsWith('0x') && tokenInput.length === 42
+      ? (tokenInput as `0x${string}`)
+      : undefined;
+
+  const normalizedSpenderAddress =
+    spenderInput.startsWith('0x') && spenderInput.length === 42
+      ? (spenderInput as `0x${string}`)
+      : undefined;
+
   // ===== 토큰 기본 정보 읽기 (symbol / decimals) =====
   const { data: symbolData } = useReadContract({
     abi: erc20Abi,
-    address: TOKEN_ADDRESS,
+    address: normalizedTokenAddress,
     functionName: 'symbol',
+    query: { enabled: !!normalizedTokenAddress },
   });
 
   const { data: decimalsData } = useReadContract({
     abi: erc20Abi,
-    address: TOKEN_ADDRESS,
+    address: normalizedTokenAddress,
     functionName: 'decimals',
+    query: { enabled: !!normalizedTokenAddress },
   });
 
   const tokenSymbol = (symbolData as string | undefined) ?? 'TOKEN';
   const tokenDecimals = Number((decimalsData as number | undefined) ?? 18);
 
   // ===== allowance 읽기 =====
-  const { data: allowanceData, isLoading: isAllowanceLoading } =
-    useReadContract({
-      abi: erc20Abi,
-      address: TOKEN_ADDRESS,
-      functionName: 'allowance',
-      args:
-        address && SPENDER_ADDRESS
-          ? [address as `0x${string}`, SPENDER_ADDRESS]
-          : undefined,
-    });
+  const {
+    data: allowanceData,
+    isLoading: isAllowanceLoading,
+    isError: isAllowanceError,
+    error: allowanceError,
+  } = useReadContract({
+    abi: erc20Abi,
+    address: normalizedTokenAddress,
+    functionName: 'allowance',
+    args:
+      address && normalizedSpenderAddress && normalizedTokenAddress
+        ? [address as `0x${string}`, normalizedSpenderAddress]
+        : undefined,
+    query: {
+      enabled:
+        !!address && !!normalizedSpenderAddress && !!normalizedTokenAddress,
+    },
+  });
 
   const allowance = allowanceData as bigint | undefined;
 
@@ -235,8 +256,8 @@ export default function Page() {
       alert('지갑부터 연결해주세요.');
       return;
     }
-    // 간단한 교육용: allowance가 0일 때만 기록하도록 안내
-    if (allowance && allowance > BigInt(0)) {
+    // 간단한 예제용: allowance가 0일 때만 기록하도록 안내
+    if (allowance !== undefined && allowance > BigInt(0)) {
       const ok = confirm(
         '현재 allowance가 0이 아닙니다.\n정말 "정리 완료"로 기록하시겠어요?'
       );
@@ -272,7 +293,8 @@ export default function Page() {
             <span className="font-semibold"> approve / allowance 권한</span>을
             확인하고, 정리(0으로 줄이기)한 뒤
             <br />그 사실을 온체인에 기록하는{' '}
-            <span className="font-semibold">스마트컨트랙트</span>입니다.
+            <span className="font-semibold">스마트컨트랙트 기반 DApp</span>
+            입니다.
           </p>
         </header>
 
@@ -338,32 +360,56 @@ export default function Page() {
             2. 토큰 권한(allowance) 상태 확인
           </h2>
 
+          <p className="text-xs text-slate-500">
+            현재 연결된 지갑 주소를 기준으로, 아래에 입력한 토큰 주소 / spender
+            주소 조합에 대한 allowance를 조회합니다.
+          </p>
+
+          {/* 주소 입력 영역 */}
           <div className="grid gap-3 text-sm md:grid-cols-2">
             <div className="space-y-1">
               <p className="text-slate-500 text-xs font-medium">
-                검사 대상 토큰
+                검사 대상 토큰 주소
               </p>
-              <p className="font-mono text-xs break-all">
-                {TOKEN_ADDRESS ??
-                  '환경변수 NEXT_PUBLIC_TOKEN_ADDRESS 설정 필요'}
-              </p>
+              <input
+                value={tokenInput}
+                onChange={(e) => setTokenInput(e.target.value.trim())}
+                placeholder={
+                  TOKEN_ADDRESS ?? '0x로 시작하는 ERC-20 토큰 주소를 입력하세요'
+                }
+                className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-slate-400"
+              />
               <p className="text-xs text-slate-500">
                 심볼: <span className="font-semibold">{tokenSymbol}</span> ·
                 소수 자리:{' '}
                 <span className="font-semibold">{tokenDecimals}</span>
               </p>
+              {!normalizedTokenAddress && tokenInput && (
+                <p className="text-xs text-red-600">
+                  토큰 주소 형식이 올바르지 않습니다.
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <p className="text-slate-500 text-xs font-medium">
-                권한을 받은 DApp / 컨트랙트 (spender)
+                권한을 받은 DApp / 컨트랙트 주소 (spender)
               </p>
-              <p className="font-mono text-xs break-all">
-                {SPENDER_ADDRESS ??
-                  '환경변수 NEXT_PUBLIC_SPENDER_ADDRESS 설정 필요'}
-              </p>
+              <input
+                value={spenderInput}
+                onChange={(e) => setSpenderInput(e.target.value.trim())}
+                placeholder={
+                  SPENDER_ADDRESS ?? '0x로 시작하는 컨트랙트 주소를 입력하세요'
+                }
+                className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-slate-400"
+              />
               <p className="text-xs text-slate-500">
                 예: DEX, NFT 마켓, 예전 테스트용 컨트랙트 등
               </p>
+              {!normalizedSpenderAddress && spenderInput && (
+                <p className="text-xs text-red-600">
+                  spender 주소 형식이 올바르지 않습니다.
+                </p>
+              )}
             </div>
           </div>
 
@@ -371,8 +417,21 @@ export default function Page() {
             <p className="font-medium text-slate-800">현재 allowance</p>
             {!isConnected ? (
               <p className="text-slate-500">지갑을 먼저 연결해주세요.</p>
+            ) : !normalizedTokenAddress || !normalizedSpenderAddress ? (
+              <p className="text-slate-500">
+                유효한 토큰 주소와 spender 주소를 입력하면 allowance를
+                조회합니다.
+              </p>
             ) : isAllowanceLoading ? (
               <p className="text-slate-500">allowance 조회 중...</p>
+            ) : isAllowanceError ? (
+              <p className="text-xs text-red-600">
+                allowance 조회 중 오류가 발생했습니다.
+                <br />
+                {(allowanceError as Error | undefined)?.message
+                  ? `사유: ${(allowanceError as Error).message}`
+                  : '사유: 알 수 없는 오류'}
+              </p>
             ) : allowance === undefined ? (
               <p className="text-slate-500">
                 allowance 정보를 가져올 수 없습니다.
@@ -419,8 +478,8 @@ export default function Page() {
               기록합니다.
             </p>
             <p className="text-xs text-slate-500">
-              해당 DApp은 실제 revoke 트랜잭션은 대신 보내지 않고, 사용자의
-              행동을 유도하고 기록만 남깁니다.
+              이 DApp은 실제 revoke 트랜잭션은 대신 보내지 않고, 사용자의 행동을
+              유도하고 기록만 남깁니다.
             </p>
           </div>
 
