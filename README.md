@@ -31,11 +31,12 @@
 
 2. 토큰 권한(allowance) 조회 및 위험도 표시
 
-   - 환경변수(`NEXT_PUBLIC_TOKEN_ADDRESS`, `NEXT_PUBLIC_SPENDER_ADDRESS`)로 지정된  
-     ERC-20 토큰과 spender에 대해 `allowance(owner, spender)`를 조회합니다.
-   - 조회된 값을 토큰 단위로 변환해 보여주고, 간단한 기준으로 위험도를 분류하여 배지 형태로 표시합니다.
-   - 아래 설명 영역에서 `approve / allowance / transferFrom` 관계와  
-     과도한 승인 상태가 어떤 공격(rug pull, wallet drainer 등)에 악용될 수 있는지 요약합니다.
+- 환경변수(`NEXT_PUBLIC_TOKEN_ADDRESS`, `NEXT_PUBLIC_SPENDER_ADDRESS`)에 설정된  
+  기본 토큰 / spender 주소를 사용하거나, 화면에서 사용자가 직접 입력한  
+  ERC-20 토큰 / spender 주소에 대해 `allowance(owner, spender)`를 조회합니다.
+- 조회된 값을 토큰 단위로 변환해 보여주고, 간단한 기준으로 위험도를 분류하여 배지 형태로 표시합니다.
+- 아래 설명 영역에서 `approve / allowance / transferFrom` 관계와  
+  과도한 승인 상태가 어떤 공격(rug pull, wallet drainer 등)에 악용될 수 있는지 요약합니다.
 
 3. 권한 정리 안내 (revoke 교육)
 
